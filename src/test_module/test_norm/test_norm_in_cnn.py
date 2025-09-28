@@ -67,11 +67,31 @@ def instance_norm_ownfunc(input_tensor, nn_in_layer):
     output_tensor = (input_tensor - mean) / (torch.sqrt(var + nn_in_layer.eps)) * nn_in_layer.weight.view(1, -1, 1, 1) + nn_in_layer.bias.view(1, -1, 1, 1)
     return output_tensor
 
+def rms_norm_ownfunc(input_tensor, nn_rmsn_layer):
+    """
+    input_tensor: tensor with shape (batch_size, channel_num, height, width)
+    nn_rmsn_layer: nn.RMSNorm layer
+    """
+    normalized_shape = nn_rmsn_layer.normalized_shape
+    assert len(normalized_shape) == 3, "normalized_shape must be a tuple of length 3"
+    # 在CHW上计算norm值
+    output_tensor = input_tensor / (input_tensor.view(input_tensor.shape[0], -1).pow(2).mean(dim=-1, keepdim=True).sqrt() + nn_rmsn_layer.eps) * nn_rmsn_layer.weight.view(1, *nn_rmsn_layer.weight.shape)
+    return output_tensor
+
+
 class TestNormInCNN(unittest.TestCase):
     def build_bchw_tensor(self, shape=DEF_bchw_shape):
         # build a tensor with shape (batch_size, channel_num, height, width)
         return torch.rand(shape)
     
+    def test_rms_norm(self,):
+        nn_rmsn_layer = nn.RMSNorm(normalized_shape=DEF_bchw_shape[1:], eps=1e-6, elementwise_affine=True)
+        nn_rmsn_layer.train()
+        input_tensor = self.build_bchw_tensor()
+        official_output_tensor = nn_rmsn_layer(input_tensor)
+        own_output_tensor = rms_norm_ownfunc(input_tensor, nn_rmsn_layer)
+        self.assertTrue(torch.allclose(official_output_tensor, own_output_tensor))
+
     def test_batch_norm(self,):
         nn_bn_layer = nn.BatchNorm2d(DEF_channel_num)
         nn_bn_layer.train()
